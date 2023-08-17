@@ -1,0 +1,102 @@
+
+CUDA_VISIBLE_DEVICES='4,5,6,7' nohup  python projects/FastPrune/train_net.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml' --num-gpus=4  \
+                                TEST.IMS_PER_BATCH 1024  SOLVER.IMS_PER_BATCH 512 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_prune3 \
+                                MODEL.WEIGHTS "download_model/market_bot_R50.pth" > nohup.out & 
+
+CUDA_VISIBLE_DEVICES='2,3' nohup  python projects/FastPrune/train_net.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml' --num-gpus=2  \
+                                TEST.IMS_PER_BATCH 512  SOLVER.IMS_PER_BATCH 256 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_prune2 \
+                                MODEL.WEIGHTS "download_model/market_bot_R50.pth" > nohup2.out & 
+
+
+CUDA_VISIBLE_DEVICES='3'  nohup python projects/FastPrune/train_net.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml' --num-gpus=1  \
+                                TEST.IMS_PER_BATCH 1024  SOLVER.IMS_PER_BATCH 128 \
+                                MODEL.WEIGHTS "logs/market1501/bagtricks_R50_reproduce/model_best.pth"  > market_repro_prune.txt &
+
+CUDA_VISIBLE_DEVICES='4,5,6,7'  nohup python projects/FastPrune/train_net.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml' --num-gpus=4  \
+                                TEST.IMS_PER_BATCH 1024  SOLVER.IMS_PER_BATCH 512 SOLVER.BASE_LR 0.0000035 \
+                                MODEL.WEIGHTS "logs/market1501/bagtricks_R50_reproduce3/model_best.pth"  > market_repro_prune2.txt &
+
+
+
+##### get pruned model （default percentage 0.5）
+
+CUDA_VISIBLE_DEVICES='3'   python projects/FastPrune/prune_finetune.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml' --num-gpus=1  \
+                                TEST.IMS_PER_BATCH 1024  \
+                                MODEL.WEIGHTS "logs/market1501/bagtricks_R50_prune3/model_final.pth" 
+
+CUDA_VISIBLE_DEVICES='3'   python projects/FastPrune/prune_finetune.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml' --num-gpus=1  \
+                                TEST.IMS_PER_BATCH 1024  \
+                                MODEL.WEIGHTS "logs/market1501/bagtricks_R50_reproduce3/model_best.pth" 
+对比sparsity 训练作用
+
+
+### fine-tune pruned model
+CUDA_VISIBLE_DEVICES='4,5,6,7'  nohup python projects/FastPrune/prune_finetune.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml'  \
+                            --percent=0.5 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.NAME build_resnet_backbone SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_prune_finetune  MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 \
+                                MODEL.WEIGHTS "logs/market1501/bagtricks_R50_prune3/model_final.pth" > pruned_finetune.txt &
+
+CUDA_VISIBLE_DEVICES='4,5,6,7'  nohup python projects/FastPrune/prune_finetune.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml'  \
+                            --percent=0.8 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.NAME build_resnet_backbone SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_prune_finetune_0.8 MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 SOLVER.STEPS  "[ 30, 90 ]" \
+                                MODEL.WEIGHTS "logs/market1501/bagtricks_R50_prune3/model_final.pth" > pruned_finetune_0.8.txt &
+
+                                
+
+
+#### prune ibn model
+
+sparsity regularization
+
+
+## only add sparsity regularization on pruned bn layer
+
+CUDA_VISIBLE_DEVICES='2,3'  nohup python projects/FastPrune/train_net.py --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml'  \
+                                    --num-gpus=2  TEST.IMS_PER_BATCH 1024  SOLVER.IMS_PER_BATCH 256  MODEL.BACKBONE.WITH_IBN  True  \
+                                    OUTPUT_DIR logs/market1501/bagtricks_R50_prune_ibn2 \
+                                    MODEL.WEIGHTS  logs/market1501/bagtricks_R50_ibn_reproduce/model_best.pth > market_ibn_repro_prune2.txt & 
+
+
+#### fine-tune 
+CUDA_VISIBLE_DEVICES='4,5,6,7' nohup python projects/FastPrune/prune_finetune.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune.yaml'  \
+                            --percent=0.5 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.NAME build_resnet_backbone \
+                                MODEL.BACKBONE.WITH_IBN  True  SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_ibn_prune_finetune_0.5  MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 \
+                                MODEL.WEIGHTS logs/market1501/bagtricks_R50_prune_ibn/model_final.pth > ibn_pruned_finetune_0.5.txt & 
+
+#### fine-tune with overhaul
+
+CUDA_VISIBLE_DEVICES='4,5,6,7' python projects/FastPrune/prune_finetune_distill.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune_distill.yaml'  --resume\
+                            --percent=0.5 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.WITH_IBN  True  SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_ibn_prune_finetune_0.5_distill  MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 \
+                                MODEL.WEIGHTS logs/market1501/bagtricks_R50_prune_ibn/model_final.pth >> ibn_pruned_finetune_0.5_distill2.txt &
+
+
+CUDA_VISIBLE_DEVICES='4,5,6,7' python projects/FastPrune/prune_finetune_distill.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune_distill.yaml' \
+                            --percent=0.5 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.WITH_IBN  True  SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_ibn_prune_finetune_0.5_distill_metricKD  MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 \
+                                MODEL.WEIGHTS logs/market1501/bagtricks_R50_prune_ibn/model_final.pth > ibn_pruned_finetune_0.5_distill_metricKD.txt &
+
+        
+
+#### finetune with distill KL + metric KD
+
+CUDA_VISIBLE_DEVICES='4,5,6,7' python projects/FastPrune/prune_finetune_distill.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune_distill.yaml' \
+                            --percent=0.5 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.WITH_IBN  True  SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_ibn_prune2_finetune_0.5_distill_metricKD  MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 \
+                                MODEL.WEIGHTS logs/market1501/bagtricks_R50_prune_ibn2/model_final.pth > ibn_pruned2_finetune_0.5_distill_metricKD.txt &
+
+                            
+CUDA_VISIBLE_DEVICES='4,5,6,7' python projects/FastPrune/prune_finetune_distill.py  --config-file='./projects/FastPrune/configs/market1501_res50_prune_distill.yaml' \
+                            --percent=0.2 --num-gpus=4 TEST.IMS_PER_BATCH 1024  MODEL.BACKBONE.WITH_IBN  True  SOLVER.BASE_LR 0.000035 \
+                                OUTPUT_DIR logs/market1501/bagtricks_R50_ibn_prune2_finetune_0.2_distill_metricKD2  MODEL.HEADS.NUM_CLASSES 751 \
+                                SOLVER.IMS_PER_BATCH 512 SOLVER.STEPS "[60,90]"  SOLVER.MAX_EPOCH 150 \
+                                MODEL.WEIGHTS logs/market1501/bagtricks_R50_prune_ibn2/model_final.pth > ibn_pruned2_finetune_0.2_distill_metricKD2.txt &
